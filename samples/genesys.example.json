@@ -1,0 +1,12 @@
+[
+  {
+    "id": "genesys-primary",
+    "name": "Primary Genesys Cloud",
+    "region": "mypurecloud.com",
+    "clientId": "YOUR_OAUTH_CLIENT_ID",
+    "clientSecret": "YOUR_OAUTH_CLIENT_SECRET",
+    "integrationId": "YOUR_OPEN_MESSAGING_INTEGRATION_ID",
+    "webhookSecret": "RANDOM_SHARED_SECRET",
+    "verifySignature": true
+  }
+]

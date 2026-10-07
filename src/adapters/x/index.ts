@@ -1,0 +1,13 @@
+import type { ChannelConfig } from '../../core/config.js';
+import type { ChannelAdapter, InboundEvent, OutboundEvent, RawRequest, SendResult } from '../../core/types.js';
+
+type XPage={data?:Array<{id:string;sender_id?:string;text?:string;created_at?:string;dm_conversation_id?:string}>;meta?:{next_token?:string}};
+export class XAdapter implements ChannelAdapter {
+  readonly type='x' as const;
+  readonly capabilities={text:true,image:false,video:false,audio:false,file:false,quickReply:false,card:false,carousel:false,typing:false,readReceipt:false,maxTextLength:10000,sessionWindowHours:null};
+  async verifyWebhook(_req:RawRequest,_cfg:ChannelConfig):Promise<boolean>{return false;}
+  async parseInbound(_req:RawRequest):Promise<InboundEvent[]>{return [];}
+  async poll(cfg:ChannelConfig,pageToken?:string):Promise<{events:InboundEvent[];nextPageToken?:string}>{const token=cfg.credentials.userAccessToken;if(!token||!cfg.credentials.ownUserId)throw new Error('X user access token and own user ID required');const url=new URL('https://api.x.com/2/dm_events');url.searchParams.set('dm_event.fields','created_at,sender_id,dm_conversation_id');url.searchParams.set('max_results','100');if(pageToken)url.searchParams.set('pagination_token',pageToken);const response=await fetch(url,{headers:{authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15_000)});if(!response.ok)throw new Error(`X DM polling failed: HTTP ${response.status}`);const body=await response.json() as XPage;return {events:(body.data??[]).filter(e=>e.sender_id&&e.sender_id!==cfg.credentials.ownUserId).map(e=>({id:e.id,userId:e.sender_id!,time:e.created_at??new Date().toISOString(),text:e.text,conversationId:e.dm_conversation_id})),nextPageToken:body.meta?.next_token};}
+  async sendOutbound(msg:OutboundEvent,cfg:ChannelConfig):Promise<SendResult>{const token=cfg.credentials.userAccessToken;if(!token)throw new Error('X userAccessToken missing');const text=[msg.text,...(msg.quickReplies??[]).map((x,i)=>`${i+1}. ${x}`),...(msg.cards??[]).map(c=>`${c.title} ${c.url??''}`)].filter(Boolean).join('\n');const response=await fetch(`https://api.x.com/2/dm_conversations/with/${encodeURIComponent(msg.userId)}/messages`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({text}),signal:AbortSignal.timeout(15_000)});if(!response.ok)throw new Error(`X DM send failed: HTTP ${response.status} ${await response.text()}`.slice(0,500));return {delivered:true};}
+  async healthCheck(cfg:ChannelConfig){return {ok:Boolean(cfg.credentials.userAccessToken&&cfg.credentials.ownUserId),detail:'X user access token with dm.read/dm.write and own user ID required'};}
+}

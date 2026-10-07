@@ -1,0 +1,24 @@
+[Unit]
+Description=Genesys Open Messaging Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=messageapi
+Group=messageapi
+WorkingDirectory=/opt/messageapi
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/node /opt/messageapi/dist/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/messageapi/data /opt/messageapi/.env
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

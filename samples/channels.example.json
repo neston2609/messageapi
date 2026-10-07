@@ -1,0 +1,13 @@
+[
+  {
+    "id": "line-support",
+    "type": "line",
+    "name": "LINE Support",
+    "enabled": false,
+    "integrationId": "genesys-primary",
+    "credentials": { "channelSecret": "", "channelAccessToken": "" },
+    "options": { "welcomeMessage": "Hello! How can we help?" },
+    "maxRetries": 5,
+    "rateLimitRps": 5
+  }
+]

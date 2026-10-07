@@ -1,0 +1,9 @@
+node_modules/
+dist/
+web/dist/
+data/
+.env
+coverage/
+*.tgz
+*.tar.gz
+*.pre-ubuntu

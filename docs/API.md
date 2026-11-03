@@ -21,7 +21,7 @@ All paths share the configured server port. Admin requests require the signed `b
 | DELETE | `/api/admin/queue`, `/api/admin/dlq` | Purge operations |
 | GET/PUT | `/api/admin/settings` | Global settings |
 | POST | `/api/admin/password` | `{"current":"...","next":"..."}` |
-| GET/POST | `/api/admin/export`, `/api/admin/import` | Encrypted configuration backup/restore |
+| GET/POST | `/api/admin/export`, `/api/admin/import` | Versioned JSON backup/restore for settings, channels, routing, integrations, and encrypted credentials |
 | POST | `/api/admin/encryption/rotate` | Re-authenticate with `{"password":"..."}` and rotate the app-managed key |
 | POST | `/api/admin/reveal` | Re-authenticate and reveal one configured credential set |
 | GET/POST | `/webhooks/channel/:channelId` | Platform challenge/inbound webhook |

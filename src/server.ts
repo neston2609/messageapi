@@ -97,8 +97,27 @@ export async function createApp() {
     admin.post('/api/admin/password',async(request,reply)=>{const body=request.body as {current?:string;next?:string};if(!body?.current||!body.next)return reply.code(400).send({error:'Current and new password required'});if(!await changePassword(body.current,body.next))return reply.code(403).send({error:'Current password incorrect'});return {ok:true};});
     admin.post('/api/admin/encryption/rotate',async(request,reply)=>{const body=request.body as {password?:string};if(!body?.password||!await verifyAdminPassword(body.password))return reply.code(403).send({error:'Re-authentication required'});await secrets.rotateKey();return {ok:true};});
     admin.post('/api/admin/reveal',async(request,reply)=>{const body=request.body as {password?:string;kind?:'channel'|'genesys';id?:string};if(!body?.password||!await verifyAdminPassword(body.password))return reply.code(403).send({error:'Re-authentication required'});if(body.kind==='channel'){const item=(await secrets.channels()).find(x=>x.id===body.id);return item?{credentials:item.credentials}:reply.code(404).send({error:'Unknown channel'});}if(body.kind==='genesys'){const item=(await secrets.genesys()).find(x=>x.id===body.id);return item?{clientSecret:item.clientSecret,webhookSecret:item.webhookSecret}:reply.code(404).send({error:'Unknown integration'});}return reply.code(400).send({error:'Invalid reveal target'});});
-    admin.get('/api/admin/export',async()=>{const current=await appStore.read();const {adminPasswordHash:_password,sessionSecret:_session,...publicApp}=current;return {version:1,app:publicApp,channels:await channelStore.read(),genesys:await genesysStore.read()};});
-    admin.post('/api/admin/import',async(request,reply)=>{const body=request.body as {version?:number;app?:unknown;channels?:unknown;genesys?:unknown};if(body?.version!==1||!Array.isArray(body.channels)||!Array.isArray(body.genesys))return reply.code(400).send({error:'Invalid export format'});const previous=await appStore.read();const appParse=appSchema.safeParse({...previous,...body.app as object,adminPasswordHash:previous.adminPasswordHash,sessionSecret:previous.sessionSecret});const channelsParse=channelSchema.array().safeParse(body.channels);const genesysParse=genesysSchema.array().safeParse(body.genesys);if(!appParse.success||!channelsParse.success||!genesysParse.success)return reply.code(400).send({error:'Invalid configuration data'});try{for(const item of channelsParse.data)for(const value of Object.values(item.credentials))if(value.startsWith('enc:v1:'))secrets.validateCiphertext(value);for(const item of genesysParse.data)for(const value of [item.clientSecret,item.webhookSecret])if(value.startsWith('enc:v1:'))secrets.validateCiphertext(value);}catch{return reply.code(400).send({error:'Encrypted credentials require the same APP_ENCRYPTION_KEY'});}await appStore.write(appParse.data);await channelStore.write(channelsParse.data);await genesysStore.write(genesysParse.data);return {ok:true};});
+    admin.get('/api/admin/export',async()=>{
+      const current=await appStore.read();
+      const {adminPasswordHash:_password,sessionSecret:_session,...publicApp}=current;
+      return {format:'messageapi-configuration',version:2,exportedAt:new Date().toISOString(),app:publicApp,channels:await channelStore.read(),genesys:await genesysStore.read()};
+    });
+    admin.post('/api/admin/import',async(request,reply)=>{
+      const body=request.body as {format?:string;version?:number;app?:unknown;channels?:unknown;genesys?:unknown};
+      if(![1,2].includes(body?.version??0)||body.version===2&&body.format!=='messageapi-configuration'||!Array.isArray(body.channels)||!Array.isArray(body.genesys))return reply.code(400).send({error:'Invalid MessageAPI configuration file'});
+      const previous=await appStore.read();
+      const appParse=appSchema.safeParse({...previous,...body.app as object,adminPasswordHash:previous.adminPasswordHash,sessionSecret:previous.sessionSecret});
+      const channelsParse=channelSchema.array().safeParse(body.channels);const genesysParse=genesysSchema.array().safeParse(body.genesys);
+      if(!appParse.success||!channelsParse.success||!genesysParse.success)return reply.code(400).send({error:'Configuration validation failed'});
+      const duplicate=(values:string[])=>new Set(values).size!==values.length;
+      if(duplicate(channelsParse.data.map(x=>x.id))||duplicate(genesysParse.data.map(x=>x.id)))return reply.code(400).send({error:'Configuration contains duplicate IDs'});
+      const integrationIds=new Set(genesysParse.data.map(x=>x.id));
+      const unbound=channelsParse.data.filter(x=>!integrationIds.has(x.integrationId)).map(x=>x.id);
+      if(unbound.length)return reply.code(400).send({error:`Channels reference missing Genesys integrations: ${unbound.join(', ')}`});
+      try{for(const item of channelsParse.data)for(const value of Object.values(item.credentials))if(value.startsWith('enc:v1:'))secrets.validateCiphertext(value);for(const item of genesysParse.data)for(const value of [item.clientSecret,item.webhookSecret])if(value.startsWith('enc:v1:'))secrets.validateCiphertext(value);}catch{return reply.code(400).send({error:'Encrypted credentials require the APP_ENCRYPTION_KEY used to create this backup'});}
+      await appStore.write(appParse.data);await genesysStore.write(genesysParse.data);await channelStore.write(channelsParse.data);app.log.level=appParse.data.logLevel;
+      return {ok:true,channels:channelsParse.data.length,genesysIntegrations:genesysParse.data.length,importedAt:new Date().toISOString()};
+    });
   });
 
   const ui=resolve(process.cwd(),'web/dist');if(existsSync(ui))await app.register(fastifyStatic,{root:ui,wildcard:false});else app.get('/',async(_request,reply)=>reply.type('text/html').send('<h1>Build the admin UI with npm run build.</h1>'));

@@ -54,6 +54,12 @@ For Meta and WhatsApp, the bridge responds to the standard GET webhook challenge
 1. Check **Dashboard** for channel status, recent errors, queue depth, and dead letters. A green service status means the process responds; it does not prove external delivery.
 2. Use **Messages** to inspect inbound/outbound records and **Sessions** to check the customer-to-Genesys conversation mapping. End a session only when you intend a new conversation for that customer.
 3. Use **Queue > Retry now** or **Dead letters > Retry** after fixing a credential, network, or platform policy problem. Purge deletes pending delivery work, so use it only after confirming those messages may be discarded.
+
+## Configuration backup and restore
+
+Open **Settings > Configuration backup** and select **Export all configuration** to download a JSON backup. The file contains global settings, channels, routing, Genesys integrations, and encrypted credentials. It does not contain the administrator password or active browser sessions.
+
+Select **Import configuration**, choose a previously exported JSON file, review the replacement warning, and confirm the import. Import replaces the current configuration after validating every record and channel-to-integration reference. Encrypted credentials can only be restored when the destination server uses the same `APP_ENCRYPTION_KEY`; back up the server `.env` file separately and keep both files secure.
 4. In **Settings**, export the encrypted configuration after changes. Back up `C:\MessageAPI\data` and `C:\MessageAPI\.env` together. An export alone cannot decrypt credentials without the matching encryption key. After rotating the key, back up the new `.env` immediately.
 
 ### Troubleshooting

@@ -19,6 +19,11 @@ describe('HTTP integration',()=>{
       const secrets=new ConfigSecrets(new SecretBox(process.env.APP_ENCRYPTION_KEY!));
       await secrets.saveGenesys({id:'g1',name:'G',region:'mypurecloud.com',clientId:'id',clientSecret:'client-secret',integrationId:'a4fac3cc-c30c-47cd-a065-293897e2d508',webhookSecret:'hook-secret',verifySignature:true});
       await secrets.saveChannel({id:'c1',type:'generic',name:'C',enabled:true,integrationId:'g1',credentials:{webhookSecret:'channel-secret',outboundUrl:'https://example.com/send',outboundToken:'token'},options:{},maxRetries:1,rateLimitRps:10});
+      const exported=await app.inject({method:'GET',url:'/api/admin/export',headers:{cookie}});expect(exported.statusCode).toBe(200);
+      const backup=exported.json<{format:string;version:number;channels:Array<Record<string,unknown>>;genesys:Array<Record<string,unknown>>}>();expect(backup).toMatchObject({format:'messageapi-configuration',version:2});expect(backup.channels).toHaveLength(1);expect(backup.genesys).toHaveLength(1);
+      const broken={...backup,channels:backup.channels.map(channel=>({...channel,integrationId:'missing'}))};
+      expect((await app.inject({method:'POST',url:'/api/admin/import',headers:{cookie,'x-csrf-token':csrf},payload:broken})).statusCode).toBe(400);
+      expect((await app.inject({method:'POST',url:'/api/admin/import',headers:{cookie,'x-csrf-token':csrf},payload:backup})).json()).toMatchObject({ok:true,channels:1,genesysIntegrations:1});
       const calls:string[]=[];vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{calls.push(String(input));return String(input).includes('/oauth/token')?new Response(JSON.stringify({access_token:'token',expires_in:3600}),{status:200}):new Response('{}',{status:200});});
       const raw='{"id":"event-1","userId":"customer-1","text":"hello"}';const signature=`sha256=${createHmac('sha256','channel-secret').update(raw).digest('hex')}`;
       expect((await app.inject({method:'POST',url:'/webhooks/channel/c1',headers:{'content-type':'application/json','x-hub-signature-256':'sha256=bad'},payload:raw})).statusCode).toBe(401);

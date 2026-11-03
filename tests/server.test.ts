@@ -23,6 +23,16 @@ describe('HTTP integration',()=>{
       const backup=exported.json<{format:string;version:number;channels:Array<Record<string,unknown>>;genesys:Array<Record<string,unknown>>}>();expect(backup).toMatchObject({format:'messageapi-configuration',version:2});expect(backup.channels).toHaveLength(1);expect(backup.genesys).toHaveLength(1);
       const broken={...backup,channels:backup.channels.map(channel=>({...channel,integrationId:'missing'}))};
       expect((await app.inject({method:'POST',url:'/api/admin/import',headers:{cookie,'x-csrf-token':csrf},payload:broken})).statusCode).toBe(400);
+      const wrongKey={...backup,channels:backup.channels.map(channel=>({...channel,credentials:{webhookSecret:'enc:v1:AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:AAAA'}})),genesys:backup.genesys.map(integration=>({...integration,clientSecret:'enc:v1:AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:AAAA'}))};
+      const rejectedImport=await app.inject({method:'POST',url:'/api/admin/import',headers:{cookie,'x-csrf-token':csrf},payload:wrongKey});
+      expect(rejectedImport.statusCode).toBe(400);expect(rejectedImport.json()).toMatchObject({error:'Encrypted credentials could not be decrypted. Check the source APP_ENCRYPTION_KEY from the server that exported this file.'});
+      const unchanged=await app.inject({method:'GET',url:'/api/admin/export',headers:{cookie}});expect(unchanged.json()).toMatchObject({app:{publicBaseUrl:'https://example.com'},channels:backup.channels,genesys:backup.genesys});
+      const sourceKey=randomBytes(32).toString('base64');const sourceBox=new SecretBox(sourceKey);
+      const foreignBackup={...backup,channels:backup.channels.map(channel=>({...channel,credentials:{webhookSecret:sourceBox.encrypt('channel-secret'),outboundUrl:sourceBox.encrypt('https://example.com/send'),outboundToken:sourceBox.encrypt('token')}})),genesys:backup.genesys.map(integration=>({...integration,clientSecret:sourceBox.encrypt('client-secret'),webhookSecret:sourceBox.encrypt('hook-secret')}))};
+      const importedForeign=await app.inject({method:'POST',url:'/api/admin/import',headers:{cookie,'x-csrf-token':csrf},payload:{...foreignBackup,sourceEncryptionKey:sourceKey}});
+      expect(importedForeign.statusCode).toBe(200);expect(importedForeign.json()).toMatchObject({ok:true,channels:1,genesysIntegrations:1});
+      const afterForeignImport=await app.inject({method:'GET',url:'/api/admin/export',headers:{cookie}});const importedChannel=afterForeignImport.json<{channels:Array<{credentials:Record<string,string>}>}>().channels[0]!;
+      expect(new SecretBox(process.env.APP_ENCRYPTION_KEY!).decrypt(importedChannel.credentials.webhookSecret!)).toBe('channel-secret');
       expect((await app.inject({method:'POST',url:'/api/admin/import',headers:{cookie,'x-csrf-token':csrf},payload:backup})).json()).toMatchObject({ok:true,channels:1,genesysIntegrations:1});
       const calls:string[]=[];vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{calls.push(String(input));return String(input).includes('/oauth/token')?new Response(JSON.stringify({access_token:'token',expires_in:3600}),{status:200}):new Response('{}',{status:200});});
       const raw='{"id":"event-1","userId":"customer-1","text":"hello"}';const signature=`sha256=${createHmac('sha256','channel-secret').update(raw).digest('hex')}`;

@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import pino from 'pino';
-import { appSchema, appStore, channelSchema, channelStore, genesysSchema, genesysStore, initializeConfig, loadPreviousSecretBox, loadSecretBox } from './core/config.js';
+import { appSchema, appStore, channelSchema, channelStore, genesysSchema, genesysStore, initializeConfig, loadPreviousSecretBox, loadSecretBox, type ChannelConfig, type GenesysConfig } from './core/config.js';
 import { ConfigSecrets } from './core/secrets.js';
 import { getAdapter, adapterCapabilities } from './adapters/index.js';
 import { verifyHmac } from './core/signature.js';
@@ -22,6 +22,7 @@ import { RotatingFileStream } from './core/logging.js';
 import type { OutboundEvent, RawRequest } from './core/types.js';
 import { randomBytes } from 'node:crypto';
 import { exchangeYoutubeCode, rememberYoutubeAccessToken, youtubeAuthorizationUrl } from './adapters/youtube/oauth.js';
+import { SecretBox } from './core/crypto.js';
 
 type QueuePayload={kind:'send';channelId:string;event:OutboundEvent;integrationId:string;raw:Record<string,unknown>}|{kind:'receipt';integrationId:string;raw:Record<string,unknown>;status:'Delivered'|'Failed';reason?:string};
 type WebhookBody={rawBody:Buffer;json:unknown};
@@ -103,7 +104,7 @@ export async function createApp() {
       return {format:'messageapi-configuration',version:2,exportedAt:new Date().toISOString(),app:publicApp,channels:await channelStore.read(),genesys:await genesysStore.read()};
     });
     admin.post('/api/admin/import',async(request,reply)=>{
-      const body=request.body as {format?:string;version?:number;app?:unknown;channels?:unknown;genesys?:unknown};
+      const body=request.body as {format?:string;version?:number;app?:unknown;channels?:unknown;genesys?:unknown;sourceEncryptionKey?:string};
       if(![1,2].includes(body?.version??0)||body.version===2&&body.format!=='messageapi-configuration'||!Array.isArray(body.channels)||!Array.isArray(body.genesys))return reply.code(400).send({error:'Invalid MessageAPI configuration file'});
       const previous=await appStore.read();
       const appParse=appSchema.safeParse({...previous,...body.app as object,adminPasswordHash:previous.adminPasswordHash,sessionSecret:previous.sessionSecret});
@@ -114,8 +115,9 @@ export async function createApp() {
       const integrationIds=new Set(genesysParse.data.map(x=>x.id));
       const unbound=channelsParse.data.filter(x=>!integrationIds.has(x.integrationId)).map(x=>x.id);
       if(unbound.length)return reply.code(400).send({error:`Channels reference missing Genesys integrations: ${unbound.join(', ')}`});
-      try{for(const item of channelsParse.data)for(const value of Object.values(item.credentials))if(value.startsWith('enc:v1:'))secrets.validateCiphertext(value);for(const item of genesysParse.data)for(const value of [item.clientSecret,item.webhookSecret])if(value.startsWith('enc:v1:'))secrets.validateCiphertext(value);}catch{return reply.code(400).send({error:'Encrypted credentials require the APP_ENCRYPTION_KEY used to create this backup'});}
-      await appStore.write(appParse.data);await genesysStore.write(genesysParse.data);await channelStore.write(channelsParse.data);app.log.level=appParse.data.logLevel;
+      let protectedChannels:ChannelConfig[];let protectedGenesys:GenesysConfig[];
+      try{const source=body.sourceEncryptionKey?new SecretBox(body.sourceEncryptionKey):undefined;protectedChannels=channelsParse.data.map(item=>({...item,credentials:Object.fromEntries(Object.entries(item.credentials).map(([key,value])=>[key,secrets.reEncrypt(value,source)]))}));protectedGenesys=genesysParse.data.map(item=>({...item,clientSecret:secrets.reEncrypt(item.clientSecret,source),webhookSecret:secrets.reEncrypt(item.webhookSecret,source)}));}catch{return reply.code(400).send({error:'Encrypted credentials could not be decrypted. Check the source APP_ENCRYPTION_KEY from the server that exported this file.'});}
+      await appStore.write(appParse.data);await genesysStore.write(protectedGenesys);await channelStore.write(protectedChannels);app.log.level=appParse.data.logLevel;
       return {ok:true,channels:channelsParse.data.length,genesysIntegrations:genesysParse.data.length,importedAt:new Date().toISOString()};
     });
   });

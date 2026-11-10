@@ -6,7 +6,7 @@ import { JsonStore } from './store.js';
 import { SecretBox } from './crypto.js';
 
 export const appSchema = z.object({ port: z.number().int().min(1).max(65535).default(3000), publicBaseUrl: z.string().default(''), logLevel: z.enum(['fatal','error','warn','info','debug','trace']).default('info'), retentionDays: z.number().int().positive().default(30), adminUsername: z.string().default('admin'), adminPasswordHash: z.string().default(''), sessionSecret: z.string().default(''), maxMediaBytes: z.number().int().positive().default(20_000_000), dedupTtlHours: z.number().int().positive().default(72) });
-export const channelTypes = ['line','facebook','instagram','tiktok','youtube','whatsapp','x','telegram','wechat','pantip','generic'] as const;
+export const channelTypes = ['line','facebook','instagram','tiktok','youtube','whatsapp','x','telegram','msteams','wechat','pantip','generic'] as const;
 export const channelSchema = z.object({ id: z.string().min(1), type: z.enum(channelTypes), name: z.string().min(1), enabled: z.boolean().default(false), integrationId: z.string().default(''), credentials: z.record(z.string(), z.string()).default({}), options: z.record(z.string(), z.unknown()).default({}), maxRetries: z.number().int().min(0).max(20).default(5), rateLimitRps: z.number().positive().default(5) });
 export const genesysSchema = z.object({ id: z.string().min(1), name: z.string().min(1), region: z.string().min(1), clientId: z.string().min(1), clientSecret: z.string().min(1), integrationId: z.uuid(), webhookSecret: z.string().default(''), verifySignature: z.boolean().default(true) });
 export type AppConfig = z.infer<typeof appSchema>;

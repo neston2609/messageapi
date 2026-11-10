@@ -28,6 +28,14 @@ All paths share the configured server port. Admin requests require the signed `b
 | POST | `/webhooks/genesys/:integrationId` | Signed outbound Genesys message; `{"accepted":true}` |
 | GET | `/media/:token` | Expiring signed media retrieval |
 
+## Microsoft Teams Bot Framework channel
+
+- Register an Azure Bot, enable the Microsoft Teams channel, and set its messaging endpoint to `https://<public-host>/webhooks/channel/<channelId>`.
+- Configure `MicrosoftAppId` and `MicrosoftAppPassword`. For single-tenant app registrations, also configure `MicrosoftAppTenantId`; without it, token acquisition uses the legacy multi-tenant `botframework.com` authority.
+- The adapter accepts Bot Framework `message` activities only. It validates the bearer JWT signature against Microsoft's published signing keys, requires issuer `https://api.botframework.com`, the configured app ID audience, an unexpired token, the activity's matching signed `serviceUrl`, and a key endorsed for the `msteams` channel.
+- Text replies are sent via the Bot Framework Connector conversation activities API. The conversation reference is captured from a verified inbound message; Teams service URLs are restricted to known Bot Framework hosts.
+- Only textual `message` activities are relayed. Outbound files, cards, and quick replies are downgraded to text. Install the bot in the target Team/chat and verify a real two-way exchange before enabling it for production.
+
 Example generic inbound webhook body: `{"id":"platform-event-1","userId":"customer-1","text":"Hello","time":"2026-09-20T00:00:00Z"}`. Sign the exact raw bytes with HMAC-SHA256 and send `X-Hub-Signature-256: sha256=<hex>`. The outbound generic endpoint receives `{"id":"...","userId":"...","text":"..."}` with a Bearer token.
 
 ## Pantip Certified Developer connector contract
